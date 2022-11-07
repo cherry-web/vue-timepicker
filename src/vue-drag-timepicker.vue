@@ -1,21 +1,19 @@
 <template>
+<!-- 工时选择器 -->
   <div class="time-select">
     <table ref="table">
       <tr>
-        <th rowspan="2" class="label">星期/时间</th>
+        <th rowspan="2" class="label" v-for="(val, thIndex) in thData" :key="thIndex">{{val}}</th>
         <th colspan="24">00:00 - 12:00</th>
         <th colspan="24">12:00 - 24:00</th>
       </tr>
       <tr>
         <td v-for="(item,index) in 24" :key="index" colspan="2">{{index}}</td>
       </tr>
-      <tr v-for="(item,index) in weeks" :key="index">
+      <tr v-for="(item,index) in weeks" :key="index" class="selectAxea">
         <td class="label">{{item}}</td>
         <td v-for="(t,tindex) in 48" :key="'t'+tindex" class="time" :class="{active:selected[tindex + index*48]===1}" @click="handleClick(tindex + index*48)" :data-index="tindex + index*48">
-          <!-- <jh-popover placement="top" trigger="hover" :open-delay="450" v-model="visibles[tindex + index*48]">
-            <div slot="reference" @click="visibles[tindex + index*48]=!visibles[tindex + index*48]" style="width:10px;height:22px;outline:none;"></div>
-            <div style="text-align:center;color:gray;font-size:12px;">{{getPopoverTitle(index,tindex)}}</div>
-          </jh-popover> -->
+          <div :class="'timeDiv cls' + (tindex + index*48)"></div>
         </td>
       </tr>
     </table>
@@ -46,11 +44,17 @@ export default {
     value: {
       type: String,
       required: true
+    },
+    thData: {
+      type: Array,
+      required: true
     }
   },
   data() {
     return {
       weeks: ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'],
+      addRowArr: [],
+      arrayData: [],
       ismoving: false,
       startX: 0,
       startY: 0,
@@ -68,6 +72,7 @@ export default {
     }
   },
   computed: {
+    // 是否选中(1选中，0未选中)
     isselect() {
       return this.selected.filter(o => o === 1).length > 0
     },
@@ -104,21 +109,42 @@ export default {
     }
   },
   mounted() {
+    // 鼠标框选div,设置css
     this.marker.style.background = 'rgba(47,136,255,0.5)';
     this.marker.style.position = 'fixed';
     this.marker.style.zIndex = '9999';
     this.marker.style.top = '0';
     this.$refs.table.addEventListener('mousedown', e => { this.handleMouseDown(e); });
+    this.disTdFn()
   },
   methods: {
+    getNum(list, thatEl) {
+      let el = thatEl;
+      let thisList = list;
+      let lastVal;
+      let lastIndex;
+      return thisList.reduce((res, item, index) => {
+        if (item === el) {
+          if (lastVal === el) {
+            res[lastIndex]++;
+          } else {
+            lastIndex = index;
+            res[lastIndex] = 1;
+          }
+        }
+        lastVal = item;
+        return res;
+      }, {})
+    },
     handleClick(index) {
-      this.$set(this.selected, index, this.selected[index] === 1 ? 0 : 1)
+      // this.$set(this.selected, index, this.selected[index] === 1 ? 0 : 1)
       this.handleChange();
     },
     removeAll() {
       this.selected = this.selected.map(() => 0);
       this.handleChange();
     },
+    // 鼠标点击
     handleMouseDown(e) {
       this.ismoving = true;
       this.startX = e.x;
@@ -140,6 +166,7 @@ export default {
       document.body.addEventListener('mouseup', this.$refs.table.__handleMouseUp__);
       document.body.addEventListener('mousemove', this.$refs.table.__handleMouseMove__);
     },
+    // 鼠标点击释放
     handleMouseUp(e) {
       this.ismoving = false;
       try {
@@ -151,6 +178,7 @@ export default {
         // todo
       }
     },
+    // 鼠标移动
     handleMouseMove(e) {
       if (!this.ismoving) {
         return false;
@@ -177,6 +205,7 @@ export default {
         this.marker.style.top = `${this.endY}px`;
       }
     },
+    // td是否被选中
     handleDragSelect() {
       const startX = Math.min(this.startX, this.endX);
       const endX = Math.max(this.startX, this.endX);
@@ -185,34 +214,95 @@ export default {
       const shouldClickIndex = [];
       this.$refs.table.querySelectorAll('td.time').forEach((node, index) => {
         const rects = node.getClientRects()[0];
-        // 左上角是否进入
-        const ltIsCover = rects.right < endX && rects.bottom < endY && rects.right > startX && rects.bottom > startY;
-        // 右下角是否进入
-        const rbpIsCover = rects.left < endX && rects.top < endY && rects.left > startX && rects.top > startY;
-        // 右上角是否进入
-        const rtIsCover = rects.left < endX && rects.bottom < endY && rects.left > startX && rects.bottom > startY;
-        // 左下角是否进入
-        const lbIsCover = rects.right < endX && rects.top > startY && rects.right > startX && rects.top < endY;
-        // 左边是否交叉
-        const leftIsCover = rects.left > startX && rects.left < endX && rects.top < startY && rects.bottom > endY;
-        // 右边是否交叉
-        const rightIsCover = rects.right > startX && rects.right < endX && rects.top < startY && rects.bottom > endY;
-        // 上边是否交叉
-        const topIsCover = rects.top > startY && rects.top < endY && rects.left < startX && rects.right > endX;
-        // 下边是否交叉
-        const bottomIsCover = rects.bottom > startY && rects.bottom < endY && rects.left < startX && rects.right > endX;
-        const isCover = ltIsCover || rbpIsCover || rtIsCover || lbIsCover || leftIsCover || rightIsCover || topIsCover || bottomIsCover;
+        // 框选td底部判断
+        const bottomData = (rects.bottom >startY && rects.bottom < endY) || (rects.bottom >startY && rects.bottom > endY)
+        // 框选左上角在td内
+        const rightBottomArea = rects.right < endX && rects.right > startX && rects.top < startY && rects.top < endY && bottomData
+        // 框选右上角在td内/框选上边横过贯穿td
+        const leftBottomArea = rects.left < endX && rects.left > startX && rects.top < startY && rects.top < endY && bottomData
+        // 框选在td内
+        const rightTopArea = rects.left < startX && rects.right > endX && rects.top < startY && rects.top < endY && bottomData
+
+        // 框选
+        const isCover = rightBottomArea || leftBottomArea || rightTopArea
         if (isCover) {
           shouldClickIndex.push(index);
         }
       });
       shouldClickIndex.forEach(item => {
-        this.$set(this.selected, item, this.selected[item] === 1 ? 0 : 1);
+        const tdColor = this.$refs.table.querySelector('.cls' + item).parentNode.getAttribute('class')
+        if(tdColor.indexOf('tdColor') === -1){
+          this.$set(this.selected, item, this.selected[item] === 1 ? 0 : 1);
+        }
       });
       this.handleChange();
     },
     handleChange() {
       this.$emit('change', this.selected.join(''));
+    },
+    disTdFn() {
+      const _this = this
+      const selectData = this.getNum(this.selected, 1)
+      this.addRowArr = Object.entries(selectData);
+      let X = 0
+      let Y = 0
+      let Z = 0
+      let P = 0
+      let d = []
+      if (this.addRowArr.length > 0) {
+        this.addRowArr.forEach((val, index) => {
+          this.weeks.forEach((leng, indexW) => {
+            // 向下
+            X = Number(val[0]) + (48  * (indexW + 1)) // 第一个td下标
+            Y = X + Number(val[1]) - 1 // 最后一个被选中td下标
+            // 向上
+            Z = Number(val[0]) - (48  * (indexW + 1)) < 0 ? -1 : Number(val[0]) - (48  * (indexW + 1))
+            P = Z < 0 ? -1 : Z + Number(val[1]) - 1
+            let o = []
+            let c = []
+            if (X < this.selected.length) {
+              if (X < Y) {
+                o.push(X)
+                o.push(Y)
+              }else{
+                // X=Y
+                o.push(X)
+                o.push(Y)
+              }
+            }
+            if (Z > -1) {
+              c.push(Z)
+              c.push(P)
+            }
+            if(o.length > 0){
+              d.push(o)
+            }
+            if(c.length > 0){
+              d.push(c)
+            }
+          })
+        })
+      }
+      this.arrayData = []
+      if(d.length > 0){
+        d.forEach((value)=>{
+          for(let j = value[0];j<value[1]+1;j++){
+            this.arrayData.push(j)
+            // this.selected[j] = 0
+          }
+        })
+        for(var i = 0;i < this.selected.length;i++) {
+          if(this.arrayData.indexOf(i) !== -1){
+            this.$refs.table.querySelector('.cls' + i).parentNode.classList.add('tdColor')
+          }else{
+            this.$refs.table.querySelector('.cls' + i).parentNode.classList.remove('tdColor')
+          }
+        }
+      } else {
+        for(var i = 0;i < this.selected.length;i++) {
+          this.$refs.table.querySelector('.cls' + i).parentNode.classList.remove('tdColor')
+        }
+      }
     },
     getPopoverTitle(index, tindex, isarr) {
       let hour1 = Number.parseInt(tindex / 2, 10);
@@ -240,7 +330,7 @@ export default {
   watch: {
     value: {
       handler() {
-        const num = 48 * 7;
+        const num = 48 * this.weeks.length;
         this.selected = (this.value || '').split('').map(o => Number.parseInt(o) === 1 ? 1 : 0).slice(0, num);
         while (this.selected.length < num) {
           this.selected.push(0);
@@ -250,6 +340,27 @@ export default {
         }
       },
       immediate: true
+    },
+    thData: {
+      handler() {
+        console.log(this.thData, 'thData')
+      },
+      immediate: true
+    },
+    selected: {
+      handler(newValue) {
+        this.disTdFn()
+        return newValue
+      },
+      immediate: false,
+      deep: true
+    },
+    arrayData: {
+      handler(newValue) {
+        return newValue
+      },
+      immediate: false,
+      deep: true
     }
   }
 }
@@ -257,6 +368,10 @@ export default {
 
 
 <style lang="less" scoped>
+.selectAxea .time.tdColor{
+  background-color: #f5f5f5;
+  cursor: no-drop;
+}
 .time-select {
   display: inline-block;
   max-width: 700px;
@@ -279,7 +394,7 @@ export default {
     .time {
       width: 10px;
       height: 22px;
-      background: #f5f5f5;
+      background: #fff;
       &.active {
         background: #2f88ff;
       }
